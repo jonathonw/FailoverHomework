@@ -75,6 +75,7 @@ class FaultManager:
       print "Unknown operation"
       
   def _replicaUpdate(self, replicaMessage):
+    
     update = replicaMessage.split(",")
     loadAvg = float(update[0]) #first part of update message is the load average
     address = update[1] #second part is address
@@ -89,6 +90,13 @@ class FaultManager:
     print "Sending replica list to all clients:", update
     for client in self._clients:
       client.sendLine(update)
+      
+    #reset list of replicas after each periodical update (so that dead replicas
+    #will be pruned from the list; since replicas should send an update more
+    #frequently than this is called, this shouldn't be a problem for a properly
+    #functioning replica
+    self._replicas = {}
+    
     #reset replica update timer (do it in four seconds again)
     reactor.callLater(4, self._sendReplicaUpdatesToClients)
     
