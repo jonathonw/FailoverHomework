@@ -107,6 +107,8 @@ class ClientMiddleware(threading.Thread):
   def disconnectedFromServerReplica(self, connector, reason):
     if self._operationResult == None: #must not have gotten a result before disconnection; try the next replica
       self._connectToReplica()
+    else:
+      self._operationResult = None #now that we've disconnected, reset the result back to none
       
   def _onServerReplicaConnectError(self, e):
     self._connectToReplica()
@@ -134,6 +136,7 @@ class ClientMiddleware(threading.Thread):
     
   def _connectToReplica(self):
     if self._replicaIndexToAttempt < len(self._replicaList):
+      
       factory = Factory()
       factory.protocol = ClientProtocol
       factory.messageProcessor = self
@@ -141,6 +144,7 @@ class ClientMiddleware(threading.Thread):
       factory.onDisconnect = self.disconnectedFromServerReplica
       
       (replicaAddress, replicaPort) = self._replicaList[self._replicaIndexToAttempt]
+      print "Connecting to primary replica", replicaAddress + ":" + str(replicaPort)
       point = TCP4ClientEndpoint(reactor, replicaAddress, replicaPort)
       d = point.connect(factory)
       d.addErrback(self._onServerReplicaConnectError)
@@ -178,7 +182,6 @@ class ClientMiddleware(threading.Thread):
     #consume operation result and reset it back to None (so the next call won't
     #get the result from this iteration on failure)
     result = self._operationResult
-    self._operationResult = None
     self._operationCompleteCondition.release()
     
     if result == None: #must have run out of replicas
@@ -194,12 +197,21 @@ class Client:
     self._middleware.start()
     self._middleware.waitForFaultManager()
     
+    value = 0
+    
     while True:
       time.sleep(5)
       print "Sending request to server..."
       try:
-        result = self._middleware.performOperation(5)
+        startTime = time.clock()
+        result = self._middleware.performOperation(value)
+        stopTime = time.clock()
+        computationTime = stopTime - startTime
+        value = value + 1 #only incremented if we have a success; therefore, when coupled
+                          #with properly performing replicas, result should always
+                          #increment by one
         print "Got result:", result
+        print "  Computation took", computationTime, "seconds"
       except NoLiveReplicasAvailableException:
         print "Couldn't connect to any active replicas..."
       
