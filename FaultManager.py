@@ -8,6 +8,8 @@ from twisted.internet import error
 
 from datetime import datetime
 
+import sys
+
 class FaultManagerProtocol(basic.LineReceiver):
   '''
   Receives lines from clients, then forwards them on to the Fault Manager for
@@ -101,7 +103,11 @@ class FaultManager:
     reactor.callLater(4, self._sendReplicaUpdatesToClients)
     
 if __name__ == "__main__":
-  faultman = FaultManager(1234)
+  if len(sys.argv) != 2:
+    print "Usage:", sys.argv[0], "port"
+    exit(-1)
+  
+  faultman = FaultManager(int(sys.argv[1]))
   faultman.runServer()
     
     

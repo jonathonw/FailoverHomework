@@ -11,6 +11,28 @@ from datetime import datetime
 import sys
 import os
 
+def getCpu():
+  #Format of CPU line in /proc/stat is:
+  #   user nice system idle
+  #This function returns: (usage, total) = (user + nice + system, user + nice + system + idle).
+  #Basically, a pair of values representing a sample of CPU utilization.
+  #If we sleep between calls, we can subtract these values and get an average
+  #CPU percentage over that span of time.
+  
+  f = open('/proc/stat', 'r')
+  cpuLine = f.readline() #assume that CPU line is the first line (it is in every implementation I've seen)
+  f.close()
+  cpuValues = cpuLine.split()
+  user = int(cpuValues[1])
+  nice = int(cpuValues[2])
+  system = int(cpuValues[3])
+  idle = int(cpuValues[4])
+  
+  usage = user + nice + system
+  total = usage + idle
+  
+  return (usage, total) 
+
 class ServerProtocol(basic.LineReceiver):
   '''
   Receives lines from clients, then forwards them on to the Fault Manager for
@@ -47,6 +69,7 @@ class ServerMiddleware:
     self._state = self._serverImplementation.getInitialState()
     self._replicaList = []
     self._faultManagerConnector = None
+    self._lastUsage = getCpu()
   
   def run(self):
     self._listen()
@@ -152,9 +175,12 @@ class ServerMiddleware:
         d = point.connect(factory)
     
   def _sendLoadToFaultManager(self):
-    (oneMinuteLoad, fiveMinuteLoad, fifteenMinuteLoad) = os.getloadavg() #we only care about the one minute average
+    newUsage = getCpu()
+    fractionUsage = float(newUsage[0] - self._lastUsage[0])/float(newUsage[1] - self._lastUsage[1])
+    self._lastUsage = newUsage
+    
     if self._faultManagerConnector != None:
-      loadMessage = "r," + str(oneMinuteLoad) + "," + self._localAddress + ":" + str(self._localPort)
+      loadMessage = "r," + str(fractionUsage) + "," + self._localAddress + ":" + str(self._localPort)
       print "Sending load to fault manager:", loadMessage
       self._faultManagerConnector.sendLine(loadMessage)
     #reset update timer (do it in four seconds again)
@@ -172,7 +198,7 @@ class Server:
     
   #contains the server's "business logic"; returns (result, next state)
   def compute(self, value, currentState):
-    return ((value + currentState) / 2, 0)
+    return ((value + currentState) / 2, currentState + 1)
     
 if __name__ == "__main__":
   if len(sys.argv) != 5:
