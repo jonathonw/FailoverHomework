@@ -2,6 +2,15 @@
 
 IMAGE_TYPE="ami-00000026"
 
+datesuffix=`date "+%Y.%m.%d.%H.%M.%S"`
+
+fmout="FaultManager.$datesuffix.out"
+clientout="Client.$datesuffix.out"
+server1out="Server1.$datesuffix.out"
+server2out="Server2.$datesuffix.out"
+server3out="Server3.$datesuffix.out"
+server4out="Server4.$datesuffix.out"
+
 waitForInstance() {
   instanceState="x"
   while [[ "$instanceState" != "running" ]]; do
@@ -161,7 +170,82 @@ echo "Server4 instance is now running...  getting IP"
 server4Ip=`euca-describe-instances | grep "$server4Instance" | cut -f 4`
 echo "Server4 IP is: $server4Ip"
 
-read -p "Press enter to terminate instances..."
+echo "Copying scripts to fault manager instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$fmIp:~/
+
+echo "Copying scripts to client instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$clientIp:~/
+
+echo "Copying scripts to server1 instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$server1Ip:~/
+
+echo "Copying scripts to server2 instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$server2Ip:~/
+
+echo "Copying scripts to server3 instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$server3Ip:~/
+
+echo "Copying scripts to server4 instance..."
+scp -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" *.py ubuntu@$server4Ip:~/
+
+echo "Launching fault manager..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$fmIp python -u FaultManager.py 3000 > $fmout &
+
+echo "Waiting for 10 seconds for the fault manager to stabilize..."
+sleep 10
+
+echo "Launching servers..."
+echo "  Server 1..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server1Ip python -u UseCpu.py 0 &
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server1Ip python -u Server.py $server1Ip 30001 $fmIp 3000 > $server1out &
+sleep 3
+echo "  Server 2..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server2Ip python -u UseCpu.py 30 &
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server2Ip python -u Server.py $server2Ip 30001 $fmIp 3000 > $server2out &
+sleep 3
+echo "  Server 3..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server3Ip python -u UseCpu.py 60 &
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server3Ip python -u Server.py $server3Ip 30001 $fmIp 3000 > $server3out &
+sleep 3
+echo "  Server 4..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server4Ip python -u UseCpu.py 90 &
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server4Ip python -u Server.py $server4Ip 30001 $fmIp 3000 > $server4out &
+
+echo "Waiting for 10 seconds for servers to stabilize..."
+sleep 10
+
+echo "Launching client..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$clientIp python -u Client.py $fmIp 3000 > $clientout &
+
+echo "All servers and clients have been launched.  Output from these can be"
+echo "found in the current working directory on this machine at:"
+echo "  Fault Manager:  $fmout"
+echo "  Client:         $clientout"
+echo "  Server 1:       $server1out"
+echo "  Server 2:       $server2out"
+echo "  Server 3:       $server3out"
+echo "  Server 4:       $server4out"
+
+echo ""
+echo "Letting the servers and client run for two minutes uninterrupted..."
+sleep 120
+
+echo ""
+read -p "Press enter to kill server 1 (which should be the primary)..."
+
+echo "Killing server 1..."
+ssh -i "$KEY_NAME.pem" -o "StrictHostKeyChecking no" ubuntu@$server1Ip killall -INT python &
+echo "Server 1 killed.  Server 2 should now be the primary."
+
+echo ""
+echo "Letting the servers and client run for two minutes uninterrupted..."
+sleep 120
+
+echo ""
+echo "Test is complete (but servers are still running, if you want to collect"
+echo "more output."
+echo ""
+read -p "When finished, press enter to terminate instances created by this script..."
 
 echo "Script is done...  killing instances"
 echo -n "  Fault manager: $fmInstance... "
