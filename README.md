@@ -41,7 +41,7 @@ Running
         
     where `<key-name>` is the name of your key, without the `.pem` suffix (i.e.
     `export KEY_NAME=jwilliams`).
- 8. Run the script:
+ 8. Run the script, and follow any on-screen instructions:
  
         ./launch_test.sh
         
